@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Détecteur de chute</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      overflow: hidden;
+    }
+    .dashboard {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(12px);
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      width: 400px;
+      animation: fadeIn 1s ease-in-out;
+    }
+    h1 {
+      font-size: 28px;
+      margin-bottom: 25px;
+      animation: slideDown 0.8s ease;
+    }
+    .etat, .localisation, .heure {
+      font-size: 20px;
+      margin: 15px 0;
+      transition: all 0.3s ease;
+    }
+    .status {
+      margin-top: 25px;
+      font-size: 22px;
+      font-weight: bold;
+      transition: color 0.5s ease;
+    }
+    .map {
+      margin-top: 25px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    }
+    iframe {
+      width: 100%;
+      height: 220px;
+      border: none;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard">
+    <h1>📡 Détecteur de chute</h1>
+    <div class="etat">🧍‍♂️ État : <span id="etat">--</span></div>
+    <div class="localisation">📍 Localisation : <span id="localisation">--</span></div>
+    <div class="heure">🕒 Heure : <span id="heure">--</span></div>
+    <div class="status" id="status">En attente...</div>
+    <div class="map">
+      <iframe id="map" src="https://maps.google.com/maps?q=0,0&z=15&output=embed"></iframe>
+    </div>
+  </div>
+
+  <script>
+    function envoyerNotification(titre, message) {
+      if (Notification.permission === "granted") {
+        new Notification(titre, { body: message });
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission().then(permission => {
+          if (permission === "granted") {
+            new Notification(titre, { body: message });
+          }
+        });
+      }
+    }
+
+    function jouerAlerteSonore() {
+      const son = new Audio("https://www.soundjay.com/button/beep-07.wav");
+      son.play();
+    }
+
+    const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
+
+    client.on("connect", () => {
+      console.log("✅ Connecté au broker MQTT");
+      client.subscribe("fall_detector/data");
+    });
+
+    client.on("message", (topic, message) => {
+      const data = JSON.parse(message.toString());
+
+      let etat = "", emoji = "";
+      switch (data.etat) {
+        case "marche":
+          etat = "Marche"; emoji = "🚶‍♂️"; break;
+        case "assis":
+          etat = "Assis"; emoji = "🪑"; break;
+        case "chute":
+          etat = "Chute détectée"; emoji = "⚠️"; break;
+        default:
+          etat = "Inconnu"; emoji = "❓";
+      }
+
+      const latitude = data.gps.lat.toFixed(5);
+      const longitude = data.gps.lon.toFixed(5);
+      const heure = new Date().toLocaleTimeString("fr-FR");
+
+      document.getElementById("etat").textContent = `${etat} ${emoji}`;
+      document.getElementById("localisation").textContent = `${latitude}, ${longitude}`;
+      document.getElementById("heure").textContent = heure;
+
+      const status = document.getElementById("status");
+      if (data.etat === "chute") {
+        status.innerHTML = "🚨 Alerte : Chute détectée !";
+        status.style.color = "red";
+
+        envoyerNotification("🚨 Alerte", "Chute détectée !");
+        jouerAlerteSonore();
+      } else {
+        status.innerHTML = "✅ État stable";
+        status.style.color = "limegreen";
+      }
+
+      document.getElementById("map").src = `https://maps.google.com/maps?q=${latitude},${longitude}&z=15&output=embed`;
+    });
+  </script>
+</body>
+</html>
